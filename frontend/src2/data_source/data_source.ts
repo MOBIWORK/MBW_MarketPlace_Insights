@@ -4,18 +4,18 @@ import { useTimeAgo } from '@vueuse/core'
 import { DataSource, DataSourceListItem } from './data_source.types'
 import { showErrorToast } from '../helpers'
 
-const basePath = 'insights.insights.doctype.insights_data_source_v3.insights_data_source_v3.'
 
 const sources = ref<DataSourceListItem[]>([])
 
 const loading = ref(false)
 async function getSources() {
 	loading.value = true
-	sources.value = await call(basePath + 'get_data_sources')
+	sources.value = await call('insights.api.data_sources.get_all_data_sources')
 	sources.value = sources.value.map((source: any) => ({
 		...source,
 		created_from_now: useTimeAgo(source.creation),
 		modified_from_now: useTimeAgo(source.modified),
+		title: source.is_site_db && source.title == 'Site DB' ? window.location.hostname : source.title,
 	}))
 	loading.value = false
 	return sources.value
@@ -24,7 +24,7 @@ async function getSources() {
 const testing = ref(false)
 function testConnection(data_source: DataSource) {
 	testing.value = true
-	return call(basePath + 'test_connection', { data_source })
+	return call('insights.api.data_sources.test_connection', { data_source })
 		.catch((error: Error) => {
 			showErrorToast(error, false)
 		})
@@ -36,7 +36,7 @@ function testConnection(data_source: DataSource) {
 const creating = ref(false)
 function createDataSource(data_source: DataSource) {
 	creating.value = true
-	return call(basePath + 'create_data_source', { data_source })
+	return call('insights.api.data_sources.create_data_source', { data_source })
 		.catch((error: Error) => {
 			showErrorToast(error)
 		})

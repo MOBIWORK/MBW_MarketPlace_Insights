@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useMagicKeys, whenever } from '@vueuse/core'
+import { useMagicKeys, watchDebounced, whenever } from '@vueuse/core'
 import { onBeforeUnmount, provide } from 'vue'
 import InlineFormControlLabel from '../components/InlineFormControlLabel.vue'
 import LoadingOverlay from '../components/LoadingOverlay.vue'
@@ -19,10 +19,20 @@ const props = defineProps<{ chart: WorkbookChart; queries: WorkbookQuery[] }>()
 const chart = useChart(props.chart)
 provide('chart', chart)
 window.chart = chart
+chart.refresh()
 
 if (!chart.doc.config.order_by) {
 	chart.doc.config.order_by = []
 }
+
+watchDebounced(
+	() => chart.doc.config,
+	() => chart.refresh(),
+	{
+		deep: true,
+		debounce: 500,
+	}
+)
 
 const keys = useMagicKeys()
 const cmdZ = keys['Meta+Z']

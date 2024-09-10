@@ -1,13 +1,12 @@
 import frappe
 
-from insights.decorators import check_role
+from insights.decorators import insights_whitelist
 from insights.insights.doctype.insights_team.insights_team import (
     get_allowed_resources_for_user,
 )
 
 
-@frappe.whitelist()
-@check_role("Insights User")
+@insights_whitelist()
 def get_queries():
     allowed_queries = get_allowed_resources_for_user("Insights Query")
     if not allowed_queries:
@@ -52,8 +51,7 @@ def get_queries():
     ).run(as_dict=True)
 
 
-@frappe.whitelist()
-@check_role("Insights User")
+@insights_whitelist()
 def create_query(**query):
     doc = frappe.new_doc("Insights Query")
     doc.title = query.get("title")
@@ -76,16 +74,19 @@ def create_query(**query):
     return doc.as_dict()
 
 
-@frappe.whitelist()
+@insights_whitelist()
 def create_chart():
     chart = frappe.new_doc("Insights Chart")
     chart.save()
     return chart.name
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def pivot(
-    data, indexes: list[str] = None, columns: list[str] = None, values: list[str] = None
+    data,
+    indexes: list[str] | None = None,
+    columns: list[str] | None = None,
+    values: list[str] | None = None,
 ):
     indexes = indexes or []
     columns = columns or []

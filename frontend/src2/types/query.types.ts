@@ -1,7 +1,6 @@
-import { WorkbookQuery } from "./workbook.types";
-
-export type TableArgs = { data_source: string; table_name: string }
-export type Table = { type: 'table' } & TableArgs
+export type TableArgs = { type: 'table'; data_source: string; table_name: string }
+export type QueryTableArgs = { type: 'query'; workbook: string; query_name: string }
+export type Table = TableArgs | QueryTableArgs
 export type Column = {
 	type: 'column'
 	column_name: string
@@ -35,7 +34,7 @@ export type ColumnDataType =
 export type MeasureDataType = 'String' | 'Integer' | 'Decimal'
 export type DimensionDataType = 'String' | 'Date' | 'Datetime' | 'Time'
 export const aggregations = ['sum', 'count', 'avg', 'min', 'max', 'count_distinct']
-export type AggregationType = typeof aggregations[number]
+export type AggregationType = (typeof aggregations)[number]
 export type GranularityType = 'day' | 'week' | 'month' | 'quarter' | 'year'
 export type DataFormat = 'currency' | 'percent'
 
@@ -62,9 +61,7 @@ export type Expression = {
 	expression: string
 }
 
-export type TableSource = { table: Table }
-export type QuerySource = { query: string }
-export type SourceArgs = TableSource | QuerySource
+export type SourceArgs = { table: Table }
 export type Source = { type: 'source' } & SourceArgs
 
 export type LogicalOperator = 'And' | 'Or'
@@ -93,7 +90,9 @@ export type CastArgs = { column: Column; data_type: ColumnDataType }
 export type Cast = { type: 'cast' } & CastArgs
 
 export type JoinType = 'inner' | 'left' | 'right' | 'full'
-export type JoinCondition = { left_column: Column; right_column: Column } | { join_expression: Expression }
+export type JoinCondition =
+	| { left_column: Column; right_column: Column }
+	| { join_expression: Expression }
 export type JoinArgs = {
 	join_type: JoinType
 	table: Table
@@ -129,6 +128,9 @@ export type PivotWiderArgs = {
 }
 export type PivotWider = { type: 'pivot_wider' } & PivotWiderArgs
 
+export type CustomOperationArgs = { expression: Expression }
+export type CustomOperation = { type: 'custom_operation' } & CustomOperationArgs
+
 export type Operation =
 	| Source
 	| Filter
@@ -143,6 +145,7 @@ export type Operation =
 	| OrderBy
 	| Limit
 	| PivotWider
+	| CustomOperation
 
 export type QueryResultRow = Record<string, any>
 export type QueryResultColumn = {

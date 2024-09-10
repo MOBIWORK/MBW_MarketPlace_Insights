@@ -1,5 +1,3 @@
-import { FIELDTYPES } from '../helpers/constants'
-import dayjs from '../helpers/dayjs'
 import {
 	ArrowUpDown,
 	Combine,
@@ -14,10 +12,14 @@ import {
 	XSquareIcon,
 } from 'lucide-vue-next'
 import { copy } from '../helpers'
+import { FIELDTYPES } from '../helpers/constants'
+import dayjs from '../helpers/dayjs'
 import {
 	Cast,
 	CastArgs,
 	Column,
+	CustomOperation,
+	CustomOperationArgs,
 	Expression,
 	Filter,
 	FilterArgs,
@@ -36,6 +38,7 @@ import {
 	OrderByArgs,
 	PivotWider,
 	PivotWiderArgs,
+	QueryTableArgs,
 	Remove,
 	RemoveArgs,
 	Rename,
@@ -51,10 +54,15 @@ import {
 } from '../types/query.types'
 import { Query } from './query'
 
-export const table = (args: TableArgs): Table => ({
+export const table = (args: Partial<TableArgs>): Table => ({
 	type: 'table',
-	table_name: args.table_name,
-	data_source: args.data_source,
+	table_name: args.table_name || '',
+	data_source: args.data_source || '',
+})
+export const query_table = (args: Partial<QueryTableArgs>): Table => ({
+	type: 'query',
+	workbook: args.workbook || '',
+	query_name: args.query_name || '',
 })
 export const column = (column_name: string, options = {}): Column => ({
 	type: 'column',
@@ -139,8 +147,7 @@ export const query_operation_types = {
 		class: 'text-gray-600 bg-gray-100',
 		init: (args: SourceArgs): Source => ({ type: 'source', ...args }),
 		getDescription: (op: Source) => {
-			if ('table' in op) return `${op.table.table_name}`
-			if ('query' in op) return `${op.query}`
+			return op.table.type == 'table' ? `${op.table.table_name}` : `${op.table.query_name}`
 		},
 	},
 	join: {
@@ -150,7 +157,9 @@ export const query_operation_types = {
 		color: 'gray',
 		class: 'text-gray-600 bg-gray-100',
 		init: (args: JoinArgs): Join => ({ type: 'join', ...args }),
-		getDescription: (op: Join) => `${op.table.table_name}`,
+		getDescription: (op: Join) => {
+			return op.table.type == 'table' ? `${op.table.table_name}` : `${op.table.query_name}`
+		},
 	},
 	select: {
 		label: 'Select',
@@ -287,6 +296,17 @@ export const query_operation_types = {
 			return `${op.limit}`
 		},
 	},
+	custom_operation: {
+		label: 'Custom Operation',
+		type: 'custom_operation',
+		icon: Sigma,
+		color: 'gray',
+		class: 'text-gray-600 bg-gray-100',
+		init: (args: CustomOperationArgs): CustomOperation => ({ type: 'custom_operation', ...args }),
+		getDescription: (op: CustomOperation) => {
+			return `${op.expression.expression}`
+		},
+	},
 }
 
 export const source = query_operation_types.source.init
@@ -302,3 +322,4 @@ export const summarize = query_operation_types.summarize.init
 export const pivot_wider = query_operation_types.pivot_wider.init
 export const order_by = query_operation_types.order_by.init
 export const limit = query_operation_types.limit.init
+export const custom_operation = query_operation_types.custom_operation.init

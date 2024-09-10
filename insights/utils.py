@@ -7,6 +7,7 @@ import chardet
 import frappe
 import pandas as pd
 from frappe.model.base_document import BaseDocument
+from frappe.website.page_renderers.template_page import TemplatePage
 
 
 class ResultColumn:
@@ -173,3 +174,39 @@ def xls_to_df(file_path: str) -> list[pd.DataFrame]:
     for sheet_name in excel_file.sheet_names:
         sheets[sheet_name] = excel_file.parse(sheet_name)
     return sheets
+
+
+class InsightsPageRenderer(TemplatePage):
+    def can_render(self):
+        try:
+            path = frappe.request.path
+        except BaseException:
+            path = self.path
+
+        embed_urls = [
+            "/insights_v2/public",
+            "/insights/public",
+        ]
+        if not any(path.startswith(url) for url in embed_urls):
+            return False
+
+        return super().can_render()
+
+    def render(self):
+        self.set_headers()
+        return super().render()
+
+    def set_headers(self):
+        allowed_origins = frappe.db.get_single_value(
+            "Insights Settings", "allowed_origins"
+        )
+        if not allowed_origins:
+            return
+
+        self.headers = self.headers or {}
+        allowed_origins = allowed_origins.split(",") if allowed_origins else []
+        allowed_origins = [origin.strip() for origin in allowed_origins]
+        allowed_origins = " ".join(allowed_origins)
+        self.headers[
+            "Content-Security-Policy"
+        ] = f"frame-ancestors 'self' {allowed_origins}"

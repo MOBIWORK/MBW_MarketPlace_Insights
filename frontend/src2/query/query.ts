@@ -7,6 +7,7 @@ import { FIELDTYPES } from '../helpers/constants'
 import { createToast } from '../helpers/toasts'
 import {
 	ColumnDataType,
+	CustomOperationArgs,
 	Dimension,
 	DimensionDataType,
 	FilterGroupArgs,
@@ -29,6 +30,7 @@ import {
 	cast,
 	column,
 	count,
+	custom_operation,
 	filter_group,
 	getFormattedRows,
 	join,
@@ -36,6 +38,7 @@ import {
 	mutate,
 	order_by,
 	pivot_wider,
+	query_table,
 	remove,
 	rename,
 	select,
@@ -69,7 +72,7 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 
 		autoExecute: true,
 		executing: false,
-		result: {} as QueryResult,
+		result: { ...EMPTY_RESULT },
 
 		getOperationsForExecution,
 		execute,
@@ -91,6 +94,7 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 		renameColumn,
 		removeColumn,
 		changeColumnType,
+		addCustomOperation,
 
 		getDistinctColumnValues,
 		getColumnsForSelection,
@@ -173,7 +177,7 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 	wheneverChanges(
 		() => query.currentOperations,
 		() => query.autoExecute && execute(),
-		{ deep: true, immediate: true }
+		{ deep: true }
 	)
 
 	function getOperationsForExecution(): Operation[] {
@@ -186,12 +190,20 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 			return []
 		}
 
-		if ('table' in sourceOp) {
+		if ('query' in sourceOp && sourceOp.query) {
+			// move old structure to new structure
+			sourceOp.table = query_table({
+				query_name: sourceOp.query as string,
+			})
+			delete sourceOp.query
+		}
+
+		if (sourceOp.table.type === 'table') {
 			return query.currentOperations
 		}
 
-		if ('query' in sourceOp) {
-			const sourceQuery = getCachedQuery(sourceOp.query)
+		if (sourceOp.table.type === 'query') {
+			const sourceQuery = getCachedQuery(sourceOp.table.query_name)
 			if (!sourceQuery) {
 				createToast({
 					variant: 'error',
@@ -212,25 +224,15 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 
 	async function execute() {
 		if (!query.doc.operations.length) {
-			query.result = {
-				executedSQL: '',
-				totalRowCount: 0,
-				rows: [],
-				formattedRows: [],
-				columns: [],
-				columnOptions: [],
-			}
+			query.result = { ...EMPTY_RESULT }
 			return
 		}
 
 		query.executing = true
-		return call(
-			'insights.insights.doctype.insights_workbook.insights_workbook.fetch_query_results',
-			{
-				use_live_connection: query.doc.use_live_connection,
-				operations: query.getOperationsForExecution(),
-			}
-		)
+		return call('insights.api.workbooks.fetch_query_results', {
+			use_live_connection: query.doc.use_live_connection,
+			operations: query.getOperationsForExecution(),
+		})
 			.then((response: any) => {
 				if (!response) return
 				query.result.executedSQL = response.sql
@@ -246,7 +248,10 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 					data_type: column.type,
 				}))
 			})
-			.catch(showErrorToast)
+			.catch((e: Error) => {
+				query.result = { ...EMPTY_RESULT }
+				showErrorToast(e)
+			})
 			.finally(() => {
 				query.executing = false
 			})
@@ -428,6 +433,17 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 		)
 	}
 
+	function addCustomOperation(args: CustomOperationArgs) {
+		const editingCustomOperation = query.activeEditOperation.type === 'custom_operation'
+
+		if (!editingCustomOperation) {
+			addOperation(custom_operation(args))
+		} else {
+			query.doc.operations[query.activeEditIndex] = custom_operation(args)
+			query.setActiveEditIndex(-1)
+		}
+	}
+
 	function setOperations(newOperations: Operation[]) {
 		query.doc.operations = newOperations
 		query.activeOperationIdx = newOperations.length - 1
@@ -515,13 +531,10 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 	}
 
 	function downloadResults() {
-		return call(
-			'insights.insights.doctype.insights_workbook.insights_workbook.download_query_results',
-			{
-				use_live_connection: query.doc.use_live_connection,
-				operations: query.getOperationsForExecution(),
-			}
-		).then((csv_data: string) => {
+		return call('insights.api.workbooks.download_query_results', {
+			use_live_connection: query.doc.use_live_connection,
+			operations: query.getOperationsForExecution(),
+		}).then((csv_data: string) => {
 			const blob = new Blob([csv_data], { type: 'text/csv' })
 			const url = window.URL.createObjectURL(blob)
 			const a = document.createElement('a')
@@ -541,15 +554,12 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 				  query.doc.operations.slice(0, query.activeEditIndex)
 				: query.currentOperations
 
-		return call(
-			'insights.insights.doctype.insights_workbook.insights_workbook.get_distinct_column_values',
-			{
-				use_live_connection: query.doc.use_live_connection,
-				operations: operations,
-				column_name: column,
-				search_term,
-			}
-		)
+		return call('insights.api.workbooks.get_distinct_column_values', {
+			use_live_connection: query.doc.use_live_connection,
+			operations: operations,
+			column_name: column,
+			search_term,
+		})
 	}
 
 	function getColumnsForSelection() {
@@ -558,8 +568,7 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 				? query.doc.operations.slice(0, query.activeEditIndex)
 				: query.currentOperations
 
-		const method =
-			'insights.insights.doctype.insights_workbook.insights_workbook.get_columns_for_selection'
+		const method = 'insights.api.workbooks.get_columns_for_selection'
 		return call(method, {
 			use_live_connection: query.doc.use_live_connection,
 			operations,
@@ -624,5 +633,14 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 
 	return query
 }
+
+const EMPTY_RESULT = {
+	executedSQL: '',
+	totalRowCount: 0,
+	rows: [],
+	formattedRows: [],
+	columns: [],
+	columnOptions: [],
+} as QueryResult
 
 export type Query = ReturnType<typeof makeQuery>
