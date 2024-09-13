@@ -1,5 +1,10 @@
 export type TableArgs = { type: 'table'; data_source: string; table_name: string }
-export type QueryTableArgs = { type: 'query'; workbook: string; query_name: string }
+export type QueryTableArgs = {
+	type: 'query'
+	workbook: string
+	query_name: string
+	operations?: Operation[]
+}
 export type Table = TableArgs | QueryTableArgs
 export type Column = {
 	type: 'column'
@@ -101,6 +106,9 @@ export type JoinArgs = {
 }
 export type Join = { type: 'join' } & JoinArgs
 
+export type UnionArgs = { table: Table, distinct: boolean }
+export type Union = { type: 'union' } & UnionArgs
+
 export type MutateArgs = { new_name: string; data_type: ColumnDataType; expression: Expression }
 export type Mutate = { type: 'mutate' } & MutateArgs
 
@@ -140,6 +148,7 @@ export type Operation =
 	| Remove
 	| Cast
 	| Join
+	| Union
 	| Mutate
 	| Summarize
 	| OrderBy

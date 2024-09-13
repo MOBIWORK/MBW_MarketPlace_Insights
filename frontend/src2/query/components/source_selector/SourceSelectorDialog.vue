@@ -32,18 +32,21 @@ const tabGroups = ref<TabGroup[]>([
 	},
 ])
 const activeTab = ref<Tab | undefined>()
-wheneverChanges(activeTab, () => {
-	selectedTable.value = {
-		type: 'table',
-		data_source: '',
-		table_name: '',
+wheneverChanges(
+	() => activeTab.value?.label,
+	() => {
+		selectedTable.value = {
+			type: 'table',
+			data_source: '',
+			table_name: '',
+		}
+		selectedQuery.value = {
+			type: 'query',
+			workbook: '',
+			query_name: '',
+		}
 	}
-	selectedQuery.value = {
-		type: 'query',
-		workbook: '',
-		query_name: '',
-	}
-})
+)
 
 dataSourceStore.getSources().then(() => {
 	tabGroups.value[0].tabs = dataSourceStore.sources.map((source) => ({
@@ -83,14 +86,14 @@ if (workbook.doc.queries.length > 1) {
 }
 
 const confirmDisabled = computed(() => {
-	return !selectedTable.value?.table_name && !selectedQuery.value
+	return !selectedTable.value.table_name && !selectedQuery.value.query_name
 })
 
 function onConfirm() {
 	if (confirmDisabled.value) return
 	emit(
 		'select',
-		selectedQuery.value
+		selectedQuery.value.query_name
 			? {
 					table: query_table(selectedQuery.value),
 			  }
@@ -105,7 +108,7 @@ function onConfirm() {
 <template>
 	<Dialog v-model="showDialog" :options="{ size: '4xl' }">
 		<template #body>
-			<div class="relative flex" :style="{ height: 'calc(100vh - 12rem)' }">
+			<div class="relative flex pb-10" :style="{ height: 'calc(100vh - 12rem)' }">
 				<TabbedSidebarLayout
 					title="Pick Starting Data"
 					:tabs="tabGroups"

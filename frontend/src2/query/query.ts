@@ -24,6 +24,7 @@ import {
 	Source,
 	SourceArgs,
 	SummarizeArgs,
+	UnionArgs,
 } from '../types/query.types'
 import { WorkbookQuery } from '../types/workbook.types'
 import {
@@ -44,6 +45,7 @@ import {
 	select,
 	source,
 	summarize,
+	union,
 } from './helpers'
 
 const queries = new Map<string, Query>()
@@ -83,6 +85,7 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 		setSource,
 		addSource,
 		addJoin,
+		addUnion,
 		addFilterGroup,
 		addMutate,
 		addSummarize,
@@ -198,28 +201,45 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 			delete sourceOp.query
 		}
 
-		if (sourceOp.table.type === 'table') {
-			return query.currentOperations
-		}
+		let _operations = [...query.currentOperations]
 
 		if (sourceOp.table.type === 'query') {
 			const sourceQuery = getCachedQuery(sourceOp.table.query_name)
 			if (!sourceQuery) {
+				const message = `Source query ${sourceOp.table.query_name} not found`
 				createToast({
 					variant: 'error',
 					title: 'Error',
-					message: `Source query not found`,
+					message,
 				})
-				throw new Error('Source query not found')
+				throw new Error(message)
 			}
 
 			const sourceQueryOperations = sourceQuery.getOperationsForExecution()
 			const currentOperationsWithoutSource = query.currentOperations.slice(1)
 
-			return [...sourceQueryOperations, ...currentOperationsWithoutSource]
+			_operations = [...sourceQueryOperations, ...currentOperationsWithoutSource]
 		}
 
-		return []
+		for (const op of _operations) {
+			if (op.type !== 'join' && op.type !== 'union') continue
+			if (op.table.type !== 'query') continue
+
+			const queryTable = getCachedQuery(op.table.query_name)
+			if (!queryTable) {
+				const message = `Query ${op.table.query_name} not found`
+				createToast({
+					variant: 'error',
+					title: 'Error',
+					message,
+				})
+				throw new Error(message)
+			}
+
+			op.table.operations = queryTable.getOperationsForExecution()
+		}
+
+		return _operations
 	}
 
 	async function execute() {
@@ -312,6 +332,17 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 			addOperation(join(args))
 		} else {
 			query.doc.operations[query.activeEditIndex] = join(args)
+			query.setActiveEditIndex(-1)
+		}
+	}
+
+	function addUnion(args: UnionArgs) {
+		const editingUnion = query.activeEditOperation.type === 'union'
+
+		if (!editingUnion) {
+			addOperation(union(args))
+		} else {
+			query.doc.operations[query.activeEditIndex] = union(args)
 			query.setActiveEditIndex(-1)
 		}
 	}
@@ -548,11 +579,12 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 	}
 
 	function getDistinctColumnValues(column: string, search_term: string = '') {
+		const operationsForExecution = query.getOperationsForExecution()
 		const operations =
 			query.activeEditIndex > -1
 				? // when editing a filter, get distinct values from the operations before the filter
-				  query.doc.operations.slice(0, query.activeEditIndex)
-				: query.currentOperations
+				  operationsForExecution.slice(0, query.activeEditIndex)
+				: operationsForExecution
 
 		return call('insights.api.workbooks.get_distinct_column_values', {
 			use_live_connection: query.doc.use_live_connection,
@@ -563,10 +595,11 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 	}
 
 	function getColumnsForSelection() {
+		const operationsForExecution = query.getOperationsForExecution()
 		const operations =
 			query.activeEditOperation.type === 'select' || query.activeEditOperation.type === 'summarize'
-				? query.doc.operations.slice(0, query.activeEditIndex)
-				: query.currentOperations
+				? operationsForExecution.slice(0, query.activeEditIndex)
+				: operationsForExecution
 
 		const method = 'insights.api.workbooks.get_columns_for_selection'
 		return call(method, {
