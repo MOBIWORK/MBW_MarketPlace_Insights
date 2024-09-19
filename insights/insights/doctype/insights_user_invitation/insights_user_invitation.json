@@ -55,7 +55,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-08-31 20:11:18.191859",
+ "modified": "2024-09-18 19:33:23.576448",
  "modified_by": "Administrator",
  "module": "Insights",
  "name": "Insights User Invitation",
@@ -70,7 +70,7 @@
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "System Manager",
+   "role": "Insights Admin",
    "share": 1,
    "write": 1
   }
