@@ -1,6 +1,5 @@
 import ast
 import time
-from io import StringIO
 
 import frappe
 import ibis
@@ -395,7 +394,20 @@ class IbisQueryBuilder:
 
     def apply_granularity(self, column, granularity):
         if granularity == "week":
-            week_starts_on = 6
+            week_start_day = (
+                frappe.db.get_single_value("Insights Settings", "week_starts_on")
+                or "Monday"
+            )
+            days = [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+            week_starts_on = days.index(week_start_day)
             day_of_week = column.day_of_week.index().cast("int32")
             adjusted_week_start = (day_of_week - week_starts_on + 7) % 7
             week_start = column - adjusted_week_start.to_interval(unit="D")
@@ -434,7 +446,7 @@ class IbisQueryBuilder:
 
 
 def execute_ibis_query(
-    query: IbisQuery, query_name=None, limit=100, cache=False
+    query: IbisQuery, query_name=None, limit=100, cache=False, cache_expiry=3600
 ) -> pd.DataFrame:
     query = query.head(limit) if limit else query
     sql = ibis.to_sql(query)
@@ -449,7 +461,8 @@ def execute_ibis_query(
     res = res.replace({pd.NaT: None, np.nan: None})
 
     if cache:
-        cache_results(sql, res)
+        # TODO: fix: pivot queries are not same, so cache key is always different
+        cache_results(sql, res, cache_expiry)
 
     return res
 
@@ -479,20 +492,30 @@ def to_insights_type(dtype: DataType):
         return "Date"
     if dtype.is_time():
         return "Time"
+    if dtype.is_boolean():
+        return "Boolean"
+    if dtype.is_uuid():
+        return "UUID"
     frappe.throw(f"Cannot infer data type for: {dtype}")
 
 
-def cache_results(sql, result: pd.DataFrame):
+def cache_results(sql, result: pd.DataFrame, cache_expiry=3600):
     cache_key = make_digest(sql)
     cache_key = "insights:query_results:" + cache_key
-    frappe.cache().set_value(cache_key, result.to_json(), expires_in_sec=3600)
+    data = result.to_dict(orient="records")
+    data = frappe.as_json(data)
+    frappe.cache().set_value(cache_key, data, expires_in_sec=cache_expiry)
 
 
 def get_cached_results(sql) -> pd.DataFrame:
     cache_key = make_digest(sql)
     cache_key = "insights:query_results:" + cache_key
-    res = frappe.cache().get_value(cache_key)
-    return pd.read_json(StringIO(res)) if res else None
+    data = frappe.cache().get_value(cache_key)
+    if not data:
+        return None
+    data = frappe.parse_json(data)
+    df = pd.DataFrame(data).replace({pd.NaT: None, np.nan: None})
+    return df
 
 
 def has_cached_results(sql):
