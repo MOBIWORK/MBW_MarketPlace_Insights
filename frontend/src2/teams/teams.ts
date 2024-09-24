@@ -8,12 +8,10 @@ export type TeamMember = {
 	user: string
 }
 export type TeamPermission = {
+	type: 'Source' | 'Table'
 	resource_type: 'Insights Data Source v3' | 'Insights Table v3'
-	resource_type_label: 'Source' | 'Table'
 	resource_name: string
-	label: string
-	value: string
-	description: string
+	table_restrictions?: string
 }
 export type Team = {
 	name: string
@@ -37,7 +35,7 @@ async function getTeams(search_term = '') {
 				team_permissions: t.team_permissions.map((p: any) => {
 					return {
 						...p,
-						resource_type_label: getResourceTypeLabel(p.resource_type),
+						type: getResourceTypeLabel(p.resource_type),
 					}
 				}),
 			}
@@ -85,27 +83,6 @@ async function updateTeam(team: Team) {
 		})
 }
 
-export type ResourceOption = TeamPermission
-const fetchingResourceOptions = ref(false)
-async function getResourceOptions(team_name: string, search_term = '') {
-	fetchingResourceOptions.value = true
-	return call('insights.api.user.get_resource_options', { team_name, search_term })
-		.then((res: ResourceOption[]) =>
-			res.map((p: any) => {
-				return {
-					...p,
-					resource_type_label: getResourceTypeLabel(p.resource_type),
-				}
-			})
-		)
-		.catch((e: Error) => {
-			showErrorToast(e)
-		})
-		.finally(() => {
-			fetchingResourceOptions.value = false
-		})
-}
-
 export default function useTeamStore() {
 	if (!teams.value.length) {
 		getTeams()
@@ -121,9 +98,6 @@ export default function useTeamStore() {
 
 		updatingTeam,
 		updateTeam,
-
-		fetchingResourceOptions,
-		getResourceOptions,
 	})
 }
 
