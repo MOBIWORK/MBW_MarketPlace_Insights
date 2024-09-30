@@ -3,7 +3,7 @@ import { useMagicKeys, whenever } from '@vueuse/core'
 import { Badge } from 'frappe-ui'
 import { AlertOctagon, ArrowLeft } from 'lucide-vue-next'
 import { computed, provide, watchEffect } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import ContentEditable from '../components/ContentEditable.vue'
 import Navbar from '../components/Navbar.vue'
 import useWorkbook, { workbookKey } from './workbook'
@@ -38,6 +38,15 @@ const tabExists = computed(() => {
 	)
 })
 
+onBeforeRouteLeave(() => {
+	if (workbook.islocal) {
+		const message = 'Do you really want to leave? you have unsaved changes!'
+		if (!window.confirm(message)) {
+			return false
+		}
+	}
+})
+
 watchEffect(() => {
 	document.title = `${workbook.doc.title} | Workbook`
 })
@@ -70,7 +79,7 @@ watchEffect(() => {
 			</template>
 		</Navbar>
 		<div
-			class="relative flex w-full flex-1 overflow-hidden bg-gray-50"
+			class="relative flex w-full flex-1 overflow-hidden"
 			:class="workbook.showSidebar ? 'flex-row' : 'flex-col'"
 		>
 			<WorkbookSidebar v-if="workbook.showSidebar" />
