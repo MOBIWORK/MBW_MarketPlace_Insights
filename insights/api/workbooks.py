@@ -19,19 +19,29 @@ def fetch_query_results(operations, limit=100, use_live_connection=True):
         return
 
     columns = get_columns_from_schema(ibis_query.schema())
-    results = execute_ibis_query(ibis_query, limit=limit, cache_expiry=60 * 5)
+    results, time_taken = execute_ibis_query(
+        ibis_query, limit=limit, cache_expiry=60 * 10
+    )
     results = results.to_dict(orient="records")
-
-    count_query = ibis_query.aggregate(count=_.count())
-    count_results = execute_ibis_query(count_query, cache_expiry=60 * 5)
-    total_count = count_results.values[0][0]
 
     return {
         "sql": ibis.to_sql(ibis_query),
         "columns": columns,
         "rows": results,
-        "total_row_count": int(total_count),
+        "time_taken": time_taken,
     }
+
+
+@insights_whitelist()
+def fetch_query_results_count(operations, use_live_connection=True):
+    ibis_query = IbisQueryBuilder().build(operations, use_live_connection)
+    if ibis_query is None:
+        return
+
+    count_query = ibis_query.aggregate(count=_.count())
+    count_results, time_taken = execute_ibis_query(count_query, cache_expiry=60 * 5)
+    total_count = count_results.values[0][0]
+    return int(total_count)
 
 
 @insights_whitelist()
@@ -40,7 +50,7 @@ def download_query_results(operations, use_live_connection=True):
     if ibis_query is None:
         return
 
-    results = execute_ibis_query(ibis_query, cache=False, limit=10_00_000)
+    results, time_taken = execute_ibis_query(ibis_query, cache=False, limit=10_00_000)
     return results.to_csv(index=False)
 
 
@@ -59,7 +69,7 @@ def get_distinct_column_values(
         .distinct()
         .head(limit)
     )
-    result = execute_ibis_query(values_query, cache_expiry=24 * 60 * 60)
+    result, time_taken = execute_ibis_query(values_query, cache_expiry=24 * 60 * 60)
     return result[column_name].tolist()
 
 

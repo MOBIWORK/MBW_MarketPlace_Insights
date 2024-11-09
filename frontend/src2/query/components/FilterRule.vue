@@ -11,6 +11,7 @@ import {
 import { column } from '../helpers'
 import { getCachedQuery } from '../query'
 import DatePickerControl from './DatePickerControl.vue'
+import RelativeDatePicker from './RelativeDatePicker.vue'
 import { getValueSelectorType } from './filter_utils'
 import { flattenOptions } from '../../helpers'
 
@@ -74,6 +75,7 @@ const operatorOptions = computed(() => {
 		options.push({ label: 'less than', value: '<' })
 		options.push({ label: 'less than or equals', value: '<=' })
 		options.push({ label: 'between', value: 'between' })
+		options.push({ label: 'within', value: 'within' })
 	}
 	return options
 })
@@ -97,8 +99,10 @@ const fetchColumnValues = debounce((searchTxt: string) => {
 		console.warn('Query not found for column:', filter.value.column.column_name)
 		return
 	}
-	// if column_name is 'query'.'column_name' extract column_name
-	const pattern = /'([^']+)'\.'([^']+)'/g
+	// only for dashboard filters
+	// if column_name is {sep}query{sep}.{sep}column_name{sep} extract column_name
+	const sep = '`'
+	const pattern = new RegExp(`${sep}([^${sep}]+)${sep}\\.${sep}([^${sep}]+)${sep}`)
 	const match = pattern.exec(filter.value.column.column_name)
 	const column_name = match ? match[2] : filter.value.column.column_name
 
@@ -156,6 +160,11 @@ const fetchColumnValues = debounce((searchTxt: string) => {
 				v-model="(filter.value as string[])"
 				placeholder="Select Date"
 			/>
+			<RelativeDatePicker
+				v-else-if="valueSelectorType === 'relative_date'"
+				v-model="(filter.value as string)"
+				placeholder="Relative Date"
+			/>
 			<Autocomplete
 				v-else-if="valueSelectorType === 'select'"
 				class="max-w-[200px]"
@@ -165,7 +174,7 @@ const fetchColumnValues = debounce((searchTxt: string) => {
 				:options="distinctColumnValues"
 				:loading="fetchingValues"
 				@update:query="fetchColumnValues"
-				@update:modelValue="filter.value = $event.map((v: any) => v.value)"
+				@update:modelValue="filter.value = $event?.map((v: any) => v.value) || []"
 			/>
 			<FormControl v-else disabled />
 		</div>
