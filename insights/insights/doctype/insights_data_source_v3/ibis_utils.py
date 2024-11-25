@@ -74,6 +74,8 @@ class IbisQueryBuilder:
             return self.apply_custom_operation(operation)
         elif operation.type == "sql":
             return self.apply_sql(operation)
+        elif operation.type == "code":
+            return self.apply_code(operation)
         return self.query
 
     def get_table_or_query(self, table_args):
@@ -377,22 +379,6 @@ class IbisQueryBuilder:
         values = [self.translate_measure(measure) for measure in pivot_args["values"]]
 
         if pivot_type == "wider":
-            other_columns = [
-                self.translate_dimension(dim).get_name()
-                for dim in pivot_args["columns"]
-                if not self.is_date_type(dim.data_type)
-            ]
-            if other_columns:
-                names = self.query.select(other_columns).distinct().limit(10).execute()
-                self.query = self.query.filter(
-                    ibis.or_(
-                        *[
-                            getattr(self.query, col).isin(names[col])
-                            for col in other_columns
-                        ]
-                    )
-                )
-
             self.query = self.query.group_by(*rows, *columns).aggregate(
                 **{value.get_name(): value for value in values}
             )
@@ -407,10 +393,20 @@ class IbisQueryBuilder:
                     {dimension: "string" for dimension in date_dimensions}
                 )
 
+            names_from = [col.get_name() for col in columns]
+            names = (
+                self.query.select(names_from)
+                .order_by(names_from)
+                .distinct()
+                .limit(10)
+                .execute()
+            )
+            names = names.fillna("null").values
+
             return self.query.pivot_wider(
                 id_cols=[row.get_name() for row in rows],
-                names_from=[col.get_name() for col in columns],
-                names_sort=True,
+                names_from=names_from,
+                names=names,
                 values_from=[value.get_name() for value in values],
                 values_agg="sum",
             )
@@ -433,6 +429,39 @@ class IbisQueryBuilder:
         ds = frappe.get_doc("Insights Data Source v3", data_source)
         db = ds._get_ibis_backend()
         return db.sql(raw_sql)
+
+    def apply_code(self, code_args):
+        code = code_args.code
+
+        pandas = frappe._dict()
+        pandas.DataFrame = pd.DataFrame
+        pandas.read_csv = pd.read_csv
+        pandas.json_normalize = pd.json_normalize
+        # prevent users from writing to disk
+        pandas.DataFrame.to_csv = lambda *args, **kwargs: None
+        pandas.DataFrame.to_json = lambda *args, **kwargs: None
+
+        results = []
+        _, _locals = safe_exec(
+            code,
+            _globals={"pandas": pandas},
+            _locals={"results": results},
+            restrict_commit_rollback=True,
+        )
+        results = _locals["results"]
+        if results is None or len(results) == 0:
+            results = [{"error": "No results"}]
+
+        frappe.publish_realtime(
+            event="insights_script_log",
+            user=frappe.session.user,
+            message={
+                "user": frappe.session.user,
+                "logs": frappe.debug_log,
+            },
+        )
+
+        return ibis.memtable(results, name=make_digest(code))
 
     def translate_measure(self, measure):
         if measure.column_name == "count" and measure.aggregation == "count":
@@ -538,21 +567,22 @@ def execute_ibis_query(
     limit = min(max(limit, 1), 10_00_000)
     query = query.head(limit) if limit else query
     sql = ibis.to_sql(query)
+    cache_key = make_digest(sql, query._find_backend().db_identity)
 
-    if cache and has_cached_results(sql):
-        return get_cached_results(sql), -1
+    if cache and has_cached_results(cache_key):
+        return get_cached_results(cache_key), -1
 
     start = time.monotonic()
-    res: pd.DataFrame = query.execute()
+    result: pd.DataFrame = query.execute()
     time_taken = flt(time.monotonic() - start, 3)
     create_execution_log(sql, time_taken)
 
-    res = res.replace({pd.NaT: None, np.nan: None})
+    result = result.replace({pd.NaT: None, np.nan: None})
 
     if cache:
-        cache_results(sql, res, cache_expiry)
+        cache_results(cache_key, result, cache_expiry)
 
-    return res, time_taken
+    return result, time_taken
 
 
 def get_columns_from_schema(schema: ibis.Schema):
@@ -580,23 +610,17 @@ def to_insights_type(dtype: DataType):
         return "Date"
     if dtype.is_time():
         return "Time"
-    if dtype.is_boolean():
-        return "Boolean"
-    if dtype.is_uuid():
-        return "UUID"
-    frappe.throw(f"Cannot infer data type for: {dtype}")
+    return "String"
 
 
-def cache_results(sql, result: pd.DataFrame, cache_expiry=3600):
-    cache_key = make_digest(sql)
+def cache_results(cache_key, result: pd.DataFrame, cache_expiry=3600):
     cache_key = "insights:query_results:" + cache_key
     data = result.to_dict(orient="records")
     data = frappe.as_json(data)
     frappe.cache().set_value(cache_key, data, expires_in_sec=cache_expiry)
 
 
-def get_cached_results(sql) -> pd.DataFrame:
-    cache_key = make_digest(sql)
+def get_cached_results(cache_key) -> pd.DataFrame:
     cache_key = "insights:query_results:" + cache_key
     data = frappe.cache().get_value(cache_key)
     if not data:
@@ -606,8 +630,7 @@ def get_cached_results(sql) -> pd.DataFrame:
     return df
 
 
-def has_cached_results(sql):
-    cache_key = make_digest(sql)
+def has_cached_results(cache_key):
     cache_key = "insights:query_results:" + cache_key
     return frappe.cache().get_value(cache_key) is not None
 
@@ -631,7 +654,7 @@ def exec_with_return(
     _globals = _globals or {}
     _locals = _locals or {}
     if last_expression:
-        safe_exec(ast.unparse(a), _globals, _locals)
+        safe_exec(ast.unparse(a), _globals, _locals, restrict_commit_rollback=True)
         return safe_eval(last_expression, _globals, _locals)
     else:
         return safe_eval(code, _globals, _locals)

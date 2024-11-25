@@ -1,27 +1,22 @@
 <script setup lang="ts">
 import { useTimeAgo } from '@vueuse/core'
 import { LoadingIndicator } from 'frappe-ui'
-import { Play, RefreshCw, Wand2 } from 'lucide-vue-next'
-import { computed, inject, ref, watchEffect } from 'vue'
+import { Bug, Play, RefreshCw } from 'lucide-vue-next'
+import { computed, inject, ref } from 'vue'
 import Code from '../../components/Code.vue'
 import DataTable from '../../components/DataTable.vue'
 import { Query } from '../query'
 import ContentEditable from '../../components/ContentEditable.vue'
-import DataSourceSelector from './source_selector/DataSourceSelector.vue'
-import { wheneverChanges } from '../../helpers'
-import useDataSourceStore from '../../data_source/data_source'
+import { attachRealtimeListener } from '../../helpers'
+import session from '../../session'
 
 const query = inject<Query>('query')!
 query.autoExecute = false
 
-const operation = query.getSQLOperation()
-const data_source = ref(operation ? operation.data_source : '')
-const sql = ref(operation ? operation.raw_sql : '')
+const operation = query.getCodeOperation()
+const code = ref(operation ? operation.code : '')
 function execute() {
-	query.setSQL({
-		raw_sql: sql.value,
-		data_source: data_source.value,
-	})
+	query.setCode({ code: code.value })
 }
 
 const columns = computed(() => query.result.columns)
@@ -31,44 +26,13 @@ const totalRowCount = computed(() =>
 	query.result.totalRowCount ? query.result.totalRowCount.toLocaleString() : ''
 )
 
-const dataSourceSchema = ref<Record<string, any>>({})
-const dataSourceStore = useDataSourceStore()
-wheneverChanges(
-	data_source,
-	() => {
-		if (!data_source.value) {
-			dataSourceSchema.value = {}
-			return
-		}
-		dataSourceStore.getSchema(data_source.value).then((schema: any) => {
-			dataSourceSchema.value = schema
-		})
-	},
-	{ immediate: true }
-)
-const completions = computed(() => {
-	if (!Object.keys(dataSourceSchema.value).length)
-		return {
-			schema: {},
-			tables: [],
-		}
+const placeholder_script = `# Write your script here`
 
-	const schema: Record<string, any> = {}
-	Object.entries(dataSourceSchema.value).forEach(([table, tableData]) => {
-		schema[table] = tableData.columns.map((column: any) => ({
-			label: column.label,
-			detail: column.label,
-		}))
-	})
-
-	const tables = Object.entries(dataSourceSchema.value).map(([table, tableData]) => ({
-		label: table,
-		detail: tableData.label,
-	}))
-
-	return {
-		schema,
-		tables,
+const showLogs = ref(false)
+const scriptLogs = ref<string[]>([])
+attachRealtimeListener('insights_script_log', (data: any) => {
+	if (data.user == session.user.email) {
+		scriptLogs.value = data.logs
 	}
 })
 </script>
@@ -77,35 +41,55 @@ const completions = computed(() => {
 	<div class="flex flex-1 flex-col gap-4 overflow-hidden p-4">
 		<div class="relative flex h-[55%] w-full flex-col rounded border">
 			<div class="flex flex-shrink-0 items-center gap-1 border-b p-1">
-				<DataSourceSelector v-model="data_source" placeholder="Select a data source" />
 				<ContentEditable
 					class="flex h-7 cursor-text items-center justify-center rounded bg-white px-2 text-base text-gray-800 focus-visible:ring-1 focus-visible:ring-gray-600"
 					v-model="query.doc.title"
 					placeholder="Untitled Dashboard"
 				></ContentEditable>
 			</div>
-			<div class="flex-1 overflow-hidden">
-				<Code
-					:key="completions.tables.length"
-					v-model="sql"
-					language="sql"
-					:schema="completions.schema"
-					:tables="completions.tables"
-				/>
+			<div class="flex flex-1 overflow-hidden">
+				<div class="flex-1">
+					<Code v-model="code" language="python" :placeholder="placeholder_script" />
+				</div>
+
+				<transition
+					tag="div"
+					name="slide"
+					enter-active-class="transition ease-out duration-200"
+					enter-from-class="transform translate-x-full opacity-0"
+					enter-to-class="transform translate-x-0 opacity-100"
+					leave-active-class="transition ease-in duration-200"
+					leave-from-class="transform translate-x-0"
+					leave-to-class="transform translate-x-full"
+				>
+					<div
+						v-if="showLogs"
+						class="flex h-full w-[30rem] flex-shrink-0 flex-col overflow-hidden bg-gray-50 p-3"
+					>
+						<div class="font-mono text-sm uppercase text-gray-600">Logs</div>
+						<div class="mt-2 flex w-full flex-col gap-2 overflow-y-auto font-mono">
+							<div v-for="(log, index) in scriptLogs" :key="index" class="flex gap-2">
+								<div class="text-gray-400">[{{ index + 1 }}]</div>
+								<div class="text-gray-500">{{ log }}</div>
+							</div>
+						</div>
+					</div>
+				</transition>
 			</div>
 			<div class="flex flex-shrink-0 gap-1 border-t p-1">
-				<Button @click="execute" label="Execute">
+				<Button @click="execute" label="Run">
 					<template #prefix>
 						<Play class="h-3.5 w-3.5 text-gray-700" stroke-width="1.5" />
 					</template>
 				</Button>
-				<Button @click="" label="Format">
+				<Button @click="showLogs = !showLogs" label="Logs">
 					<template #prefix>
-						<Wand2 class="h-3.5 w-3.5 text-gray-700" stroke-width="1.5" />
+						<Bug class="h-3.5 w-3.5 text-gray-700" stroke-width="1.5" />
 					</template>
 				</Button>
 			</div>
 		</div>
+
 		<div
 			v-show="query.result.executedSQL"
 			class="tnum flex flex-shrink-0 items-center gap-2 text-sm text-gray-600"
@@ -117,6 +101,7 @@ const completions = computed(() => {
 				<span> {{ useTimeAgo(query.result.lastExecutedAt).value }} </span>
 			</div>
 		</div>
+
 		<div class="relative flex w-full flex-1 flex-col overflow-hidden rounded border">
 			<div
 				v-if="query.executing"

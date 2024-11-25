@@ -6,6 +6,7 @@ import { confirmDialog } from '../helpers/confirm_dialog'
 import { FIELDTYPES } from '../helpers/constants'
 import { createToast } from '../helpers/toasts'
 import {
+	CodeArgs,
 	ColumnDataType,
 	CustomOperationArgs,
 	Dimension,
@@ -23,6 +24,7 @@ import {
 	Rename,
 	SelectArgs,
 	SourceArgs,
+	SQLArgs,
 	SummarizeArgs,
 	UnionArgs,
 } from '../types/query.types'
@@ -46,6 +48,7 @@ import {
 	sql,
 	summarize,
 	union,
+	code
 } from './helpers'
 
 const queries = new Map<string, Query>()
@@ -106,8 +109,11 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 		getColumnsForSelection,
 		downloadResults,
 
-		getSQLQuery,
-		setSQLQuery,
+		getSQLOperation,
+		setSQL,
+
+		getCodeOperation,
+		setCode,
 
 		dimensions: computed(() => ({} as Dimension[])),
 		measures: computed(() => ({} as Measure[])),
@@ -700,19 +706,32 @@ export function makeQuery(workbookQuery: WorkbookQuery) {
 		delete query.doc.calculated_measures[column_name]
 	}
 
-	function getSQLQuery() {
+	function getSQLOperation() {
 		if (!query.doc.is_native_query) return ''
-		const op = query.doc.operations.find((op) => op.type === 'sql')
-		if (!op) return ''
-		return op.raw_sql
+		return query.doc.operations.find((op) => op.type === 'sql')
 	}
 
-	function setSQLQuery(raw_sql: string, data_source: string) {
+	function setSQL(args: SQLArgs) {
 		query.doc.operations = []
-		const op = sql({ raw_sql, data_source })
-		if (raw_sql.trim().length) {
-			query.doc.operations.push(op)
+		if (args.raw_sql.trim().length) {
+			query.doc.operations.push(sql(args))
 			query.activeOperationIdx = 0
+			query.execute()
+		} else {
+			query.activeOperationIdx = -1
+		}
+	}
+
+	function getCodeOperation() {
+		return query.doc.operations.find((op) => op.type === 'code')
+	}
+
+	function setCode(args: CodeArgs) {
+		query.doc.operations = []
+		if (args.code.trim().length) {
+			query.doc.operations.push(code(args))
+			query.activeOperationIdx = 0
+			query.execute()
 		} else {
 			query.activeOperationIdx = -1
 		}
