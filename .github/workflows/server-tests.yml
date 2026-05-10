@@ -1,12 +1,14 @@
-name: Server Tests
+name: Server
 
 on:
+  pull_request:
+  workflow_dispatch:
   schedule:
     # Run everday at midnight UTC / 5:30 IST
     - cron: "0 0 * * *"
 
 concurrency:
-  group: develop-insights-${{ github.event.number }}
+  group: server-${{ github.event_name }}-${{ github.event.number }}
   cancel-in-progress: true
 
 permissions:
@@ -30,7 +32,7 @@ jobs:
 
     steps:
       - name: Clone
-        uses: actions/checkout@v2
+        uses: actions/checkout@v6
 
       - name: Check for valid Python & Merge Conflicts
         run: |
@@ -41,18 +43,18 @@ jobs:
           fi
 
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
 
       - name: Setup Node
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v5
         with:
           node-version: 18
           check-latest: true
 
       - name: Cache pip
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
@@ -62,9 +64,9 @@ jobs:
 
       - name: Get yarn cache directory path
         id: yarn-cache-dir-path
-        run: 'echo "::set-output name=dir::$(yarn cache dir)"'
+        run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
 
-      - uses: actions/cache@v2
+      - uses: actions/cache@v4
         id: yarn-cache
         with:
           path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
@@ -94,14 +96,14 @@ jobs:
         working-directory: /home/runner/frappe-bench
         run: |
           bench --site test_site set-config allow_tests true
-          bench --site test_site run-tests --app insights --coverage
+          env/bin/python apps/insights/.github/helpers/run_backend_tests.py --site test_site
         env:
           TYPE: server
 
       - name: Upload coverage data
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: coverage-${{ matrix.container }}
+          name: coverage-server
           path: /home/runner/frappe-bench/sites/coverage.xml
 
   coverage:
@@ -110,14 +112,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Clone
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
 
       - name: Upload coverage data
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v6
         with:
-          name: coverage-unittests
+          name: Server
+          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
           verbose: true
+          flags: server
