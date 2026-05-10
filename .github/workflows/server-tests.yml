@@ -20,6 +20,12 @@ jobs:
     strategy:
       fail-fast: false
     name: Server
+    env:
+      BENCH_PATH: /home/runner/frappe-bench
+      SITE_NAME: test_site
+      DB_ROOT_PASSWORD: root
+      ADMIN_PASSWORD: admin
+      FRAPPE_BRANCH: develop
 
     services:
       mariadb:
@@ -45,12 +51,12 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.14"
 
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: 18
+          node-version: 24
           check-latest: true
 
       - name: Cache pip
@@ -77,26 +83,31 @@ jobs:
       - name: Setup
         run: |
           pip install frappe-bench
-          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
-          mysql --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
-          mysql --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
+          bench init \
+            --frappe-branch "$FRAPPE_BRANCH" \
+            --skip-redis-config-generation \
+            --skip-assets \
+            --python "$(which python)" \
+            "$BENCH_PATH"
+          mysql --host 127.0.0.1 --port 3306 -u root -p"$DB_ROOT_PASSWORD" -e "SET GLOBAL character_set_server = 'utf8mb4'"
+          mysql --host 127.0.0.1 --port 3306 -u root -p"$DB_ROOT_PASSWORD" -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
 
       - name: Install
-        working-directory: /home/runner/frappe-bench
+        working-directory: ${{ env.BENCH_PATH }}
         run: |
           bench get-app insights $GITHUB_WORKSPACE
           bench setup requirements --dev
-          bench new-site --db-root-password root --admin-password admin test_site
-          bench --site test_site install-app insights
+          bench new-site --db-root-password "$DB_ROOT_PASSWORD" --admin-password "$ADMIN_PASSWORD" "$SITE_NAME"
+          bench --site "$SITE_NAME" install-app insights
           bench build
         env:
           CI: "Yes"
 
       - name: Run Tests
-        working-directory: /home/runner/frappe-bench
+        working-directory: ${{ env.BENCH_PATH }}
         run: |
-          bench --site test_site set-config allow_tests true
-          env/bin/python apps/insights/.github/helpers/run_backend_tests.py --site test_site
+          bench --site "$SITE_NAME" set-config allow_tests true
+          env/bin/python apps/insights/.github/helpers/run_backend_tests.py --site "$SITE_NAME"
         env:
           TYPE: server
 
@@ -104,7 +115,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-server
-          path: /home/runner/frappe-bench/sites/coverage.xml
+          path: ${{ env.BENCH_PATH }}/sites/coverage.xml
 
   coverage:
     name: Coverage Wrap Up
