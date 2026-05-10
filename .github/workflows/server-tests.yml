@@ -80,12 +80,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-yarn-
 
+      - name: Install system dependencies
+        run: |
+          sudo apt -qq update
+          sudo apt -qq install -y redis-server
+
       - name: Setup
         run: |
           pip install frappe-bench
           bench init \
             --frappe-branch "$FRAPPE_BRANCH" \
-            --skip-redis-config-generation \
             --skip-assets \
             --python "$(which python)" \
             "$BENCH_PATH"
@@ -95,18 +99,27 @@ jobs:
       - name: Install
         working-directory: ${{ env.BENCH_PATH }}
         run: |
-          bench get-app insights $GITHUB_WORKSPACE
+          bench get-app insights $GITHUB_WORKSPACE --skip-assets
           bench setup requirements --dev
           bench new-site --db-root-password "$DB_ROOT_PASSWORD" --admin-password "$ADMIN_PASSWORD" "$SITE_NAME"
+          bench --site "$SITE_NAME" set-config server_script_enabled 1 --parse
           bench --site "$SITE_NAME" install-app insights
           bench build
         env:
           CI: "Yes"
 
+      - name: Start Bench Services
+        working-directory: ${{ env.BENCH_PATH }}
+        run: |
+          sed -i '/^watch:/d' Procfile
+          sed -i '/^schedule:/d' Procfile
+          sed -i '/^socketio:/d' Procfile
+          bench start &> bench_start.log &
+
       - name: Run Tests
         working-directory: ${{ env.BENCH_PATH }}
         run: |
-          bench --site "$SITE_NAME" set-config allow_tests true
+          bench --site "$SITE_NAME" set-config allow_tests 1 --parse
           env/bin/python apps/insights/.github/helpers/run_backend_tests.py --site "$SITE_NAME"
         env:
           TYPE: server
