@@ -78,12 +78,16 @@ export type GranularityType = typeof granularityOptions[number]['value']
 
 export const timeGranularityOptions = granularityOptions.slice(0, 3)
 
+export function isCalendarDateType(dataType?: string) {
+	return CalendarDateTypes.includes(dataType || '')
+}
+
 export function getGranularityOptions(dataType?: string) {
 	if (TimeTypes.includes(dataType || '')) {
 		return timeGranularityOptions
 	}
 
-	if (CalendarDateTypes.includes(dataType || '')) {
+	if (isCalendarDateType(dataType)) {
 		return granularityOptions
 	}
 
@@ -95,7 +99,7 @@ export function getDefaultGranularity(dataType?: string): GranularityType | unde
 		return 'hour'
 	}
 
-	if (CalendarDateTypes.includes(dataType || '')) {
+	if (isCalendarDateType(dataType)) {
 		return 'month'
 	}
 
