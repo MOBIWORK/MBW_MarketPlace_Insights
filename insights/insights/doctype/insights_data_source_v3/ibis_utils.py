@@ -788,12 +788,29 @@ class IbisQueryBuilder:
     def translate_dimension(self, dimension):
         col = self.get_column(dimension.column_name)
         if self.is_date_type(dimension.data_type) and dimension.granularity:
-            col = self.apply_granularity(col, dimension.granularity)
+            col = self.apply_granularity(col, dimension.granularity, dimension.data_type)
             col = col.cast(self.get_ibis_dtype(dimension.data_type))
         return col.name(dimension.dimension_name or dimension.column_name)
 
     def is_date_type(self, data_type):
         return data_type in ["Date", "Datetime", "Time"]
+
+    def get_supported_granularities(self, data_type):
+        if data_type == "Time":
+            return ["second", "minute", "hour"]
+        if data_type in ["Date", "Datetime"]:
+            return [
+                "second",
+                "minute",
+                "hour",
+                "day",
+                "week",
+                "month",
+                "quarter",
+                "year",
+                "fiscal_year",
+            ]
+        return []
 
     def apply_aggregate(self, column, aggregate_function):
         if aggregate_function == "count_distinct":
@@ -811,7 +828,15 @@ class IbisQueryBuilder:
 
         frappe.throw(f"Aggregate function {aggregate_function} is not supported")
 
-    def apply_granularity(self, column, granularity):
+    def apply_granularity(self, column, granularity, data_type=None):
+        supported_granularities = self.get_supported_granularities(data_type)
+        if supported_granularities and granularity not in supported_granularities:
+            supported = ", ".join(supported_granularities)
+            frappe.throw(
+                f"Granularity {granularity} is not supported for {data_type} columns. Supported granularities: {supported}",
+                title="Unsupported Granularity",
+            )
+
         if granularity == "week":
             return week_start(column).name(column.get_name())
         if granularity == "fiscal_year":

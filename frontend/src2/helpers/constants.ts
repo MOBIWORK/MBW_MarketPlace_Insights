@@ -4,6 +4,8 @@ import { __ } from '../translation'
 const NumberTypes = ['Integer', 'Decimal']
 const TextTypes = ['Text', 'String', 'JSON', 'Array']
 const DateTypes = ['Date', 'Datetime', 'Time']
+const CalendarDateTypes = ['Date', 'Datetime']
+const TimeTypes = ['Time']
 
 export const FIELDTYPES = {
 	NUMBER: NumberTypes,
@@ -73,3 +75,29 @@ export const granularityOptions = [
 ] as const
 
 export type GranularityType = typeof granularityOptions[number]['value']
+
+export const timeGranularityOptions = granularityOptions.slice(0, 3)
+
+export function getGranularityOptions(dataType?: string) {
+	if (TimeTypes.includes(dataType || '')) {
+		return timeGranularityOptions
+	}
+
+	if (CalendarDateTypes.includes(dataType || '')) {
+		return granularityOptions
+	}
+
+	return []
+}
+
+export function getDefaultGranularity(dataType?: string): GranularityType | undefined {
+	if (TimeTypes.includes(dataType || '')) {
+		return 'hour'
+	}
+
+	if (CalendarDateTypes.includes(dataType || '')) {
+		return 'month'
+	}
+
+	return undefined
+}
