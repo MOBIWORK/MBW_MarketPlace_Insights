@@ -1,6 +1,6 @@
 import { graphic } from 'echarts/core'
 import { ellipsis, formatNumber, getShortNumber, toTitleCase } from '../helpers'
-import { FIELDTYPES } from '../helpers/constants'
+import { FIELDTYPES, isCalendarDateType } from '../helpers/constants'
 import { getFormattedDate } from '../query/helpers'
 import {
 	AxisChartConfig,
@@ -59,7 +59,7 @@ export function getLineChartOptions(config: LineChartConfig, result: QueryResult
 	const show_scrollbar = config.y_axis.show_scrollbar || false
 
 	const xAxis = getXAxis(config.x_axis)
-	const xAxisIsDate = FIELDTYPES.DATE.includes(config.x_axis.dimension.data_type)
+	const xAxisIsDate = isCalendarDateType(config.x_axis.dimension.data_type)
 	const granularity = xAxisIsDate
 		? getGranularity(config.x_axis.dimension.dimension_name, config)
 		: null
@@ -191,7 +191,7 @@ export function getBarChartOptions(config: BarChartConfig, result: QueryResult, 
 	const show_scrollbar = config.y_axis.show_scrollbar || false
 
 	const xAxis = getXAxis(config.x_axis)
-	const xAxisIsDate = FIELDTYPES.DATE.includes(config.x_axis.dimension.data_type)
+	const xAxisIsDate = isCalendarDateType(config.x_axis.dimension.data_type)
 	const granularity = xAxisIsDate
 		? getGranularity(config.x_axis.dimension.dimension_name, config)
 		: null
@@ -335,7 +335,7 @@ function getSerie(config: AxisChartConfig, number_column: string): Series {
 
 function getXAxis(x_axis: XAxis) {
 	const columnType = x_axis.dimension.data_type
-	const xAxisIsDate = columnType && FIELDTYPES.DATE.includes(columnType)
+	const xAxisIsDate = isCalendarDateType(columnType)
 	const rotation = Math.min(Math.max(x_axis.label_rotation || 0, 0), 90)
 
 	return {

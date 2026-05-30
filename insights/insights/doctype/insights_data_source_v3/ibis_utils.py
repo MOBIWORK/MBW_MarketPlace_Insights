@@ -787,8 +787,13 @@ class IbisQueryBuilder:
 
     def translate_dimension(self, dimension):
         col = self.get_column(dimension.column_name)
+
+        if dimension.data_type == "Time" and dimension.granularity:
+            col = self.apply_time_granularity(col, dimension.granularity)
+            return col.name(dimension.dimension_name or dimension.column_name)
+
         if self.is_date_type(dimension.data_type) and dimension.granularity:
-            col = self.apply_granularity(col, dimension.granularity)
+            col = self.apply_granularity(col, dimension.granularity, dimension.data_type)
             col = col.cast(self.get_ibis_dtype(dimension.data_type))
         return col.name(dimension.dimension_name or dimension.column_name)
 
@@ -811,7 +816,25 @@ class IbisQueryBuilder:
 
         frappe.throw(f"Aggregate function {aggregate_function} is not supported")
 
-    def apply_granularity(self, column, granularity):
+    def apply_granularity(self, column, granularity, data_type=None):
+        supported_granularities = [
+            "second",
+            "minute",
+            "hour",
+            "day",
+            "week",
+            "month",
+            "quarter",
+            "year",
+            "fiscal_year",
+        ]
+        if granularity not in supported_granularities:
+            supported = ", ".join(supported_granularities)
+            frappe.throw(
+                f"Granularity {granularity} is not supported for {data_type} columns. Supported granularities: {supported}",
+                title="Unsupported Granularity",
+            )
+
         if granularity == "week":
             return week_start(column).name(column.get_name())
         if granularity == "fiscal_year":
@@ -829,6 +852,25 @@ class IbisQueryBuilder:
         if granularity not in truncate_unit:
             frappe.throw(f"Granularity {granularity} is not supported")
         return column.truncate(truncate_unit[granularity]).name(column.get_name())
+
+    def apply_time_granularity(self, column, granularity):
+        supported_granularities = ["second", "minute", "hour"]
+        if granularity not in supported_granularities:
+            supported = ", ".join(supported_granularities)
+            frappe.throw(
+                f"Granularity {granularity} is not supported for Time columns. Supported granularities: {supported}",
+                title="Unsupported Granularity",
+            )
+
+        time_string = column.cast("string")
+        if granularity == "hour":
+            return time_string.substr(0, 2).concat(ibis.literal(":00:00"))
+        if granularity == "minute":
+            return time_string.substr(0, 5).concat(ibis.literal(":00"))
+        if granularity == "second":
+            return time_string.substr(0, 8)
+
+        frappe.throw(f"Granularity {granularity} is not supported for Time columns")
 
     def evaluate_expression(self, expression, additonal_context=None):
         if not expression or not expression.strip():
