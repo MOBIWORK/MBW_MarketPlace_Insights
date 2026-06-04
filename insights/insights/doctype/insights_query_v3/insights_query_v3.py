@@ -100,7 +100,13 @@ class InsightsQueryv3(Document):
             )
 
     def on_update(self):
-        sync_query_references(self.name, self.operations)
+        frappe.enqueue(
+            sync_query_references,
+            query_name=self.name,
+            operations=self.operations,
+            enqueue_after_commit=True,
+            now=bool(frappe.flags.in_test),
+        )
 
     def cleanup_empty_folder(self, folder_name):
         """Delete folder if it has no queries or charts"""
