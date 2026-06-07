@@ -1,7 +1,6 @@
 <script setup lang="tsx">
 import { useMagicKeys, whenever } from '@vueuse/core'
 import {
-	Avatar,
 	Breadcrumbs,
 	Dropdown,
 	ListEmptyState,
@@ -10,153 +9,72 @@ import {
 	ListSelectBanner,
 	ListView,
 } from 'frappe-ui'
-import {
-	Building2,
-	ChevronDown,
-	Eye,
-	Folder,
-	FolderPlus,
-	Lock,
-	MoreHorizontal,
-	PlusIcon,
-	SearchIcon,
-	Shield,
-} from 'lucide-vue-next'
-import { computed, ref, watchEffect } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ChevronDown, Folder, FolderPlus, PlusIcon, SearchIcon } from 'lucide-vue-next'
+import { computed, ref, toRef, watchEffect } from 'vue'
+import { useRouter } from 'vue-router'
 import { wheneverChanges } from '../helpers'
-import { confirmDialog } from '../helpers/confirm_dialog'
 import session from '../session'
 import { __ } from '../translation'
 import { WorkbookListItem } from '../types/workbook.types'
 import useUserStore from '../users/users'
+import { useFolderActions } from './useFolderActions'
+import { useFolderNavigation } from './useFolderNavigation'
 import useWorkbook, { newWorkbookName } from './workbook'
-import useWorkbookFolders, {
-	buildFolderMoveOptions,
-	childrenOf,
-	folderBreadcrumb,
-} from './workbookFolders'
+import useWorkbookFolders, { buildFolderMoveOptions } from './workbookFolders'
+import { getWorkbookColumns } from './workbookListColumns'
 import useWorkbooks from './workbooks'
 
 const router = useRouter()
-const route = useRoute()
 const userStore = useUserStore()
 const workbookStore = useWorkbooks()
 const folderStore = useWorkbookFolders()
-
 const isAdmin = computed(() => session.user.is_admin)
 
-const scope = ref<'all' | 'owned' | 'shared'>('all')
-// folder navigation is driven by the URL so the browser back button drills up a level
-const currentFolder = computed(() => (route.query.folder as string) || null)
-const searchQuery = ref('')
+const folders = toRef(folderStore, 'folders')
+const { currentFolder, searchQuery, drillInto, subfolders, breadcrumbs } = useFolderNavigation(
+	folders,
+	__('Workbooks'),
+)
 
-// workbooks of the current folder come from the server; subfolders + breadcrumb
-// are derived on the client from the cached folder tree
+const scope = ref<'all' | 'owned' | 'shared'>('all')
+
 async function refresh() {
 	workbookStore.getWorkbooks(searchQuery.value, 0, scope.value, currentFolder.value || 'root')
 }
-
-wheneverChanges([scope, currentFolder], refresh, { immediate: true })
+wheneverChanges(() => [scope.value, currentFolder.value], refresh, { immediate: true })
 wheneverChanges(searchQuery, refresh, { debounce: 300 })
 
-function drillInto(folder: string | null) {
-	searchQuery.value = ''
-	router.push({ query: folder ? { folder } : {} })
-}
-
-const subfolders = computed(() => childrenOf(folderStore.folders, currentFolder.value))
-
-// ---- breadcrumbs (rendered in the navbar) ----
-const breadcrumbs = computed(() => {
-	const root = { label: __('Workbooks'), onClick: () => drillInto(null) }
-	const trail = folderBreadcrumb(folderStore.folders, currentFolder.value).map((b) => ({
-		label: b.title,
-		onClick: () => drillInto(b.name),
-	}))
-	return [root, ...trail]
-})
-
-// ---- create workbook / folder ----
+// ---- create workbook ----
 const creatingWorkbook = ref(false)
 function openNewWorkbook() {
 	creatingWorkbook.value = true
-	const workbook = useWorkbook(newWorkbookName())
-	workbook
+	useWorkbook(newWorkbookName())
 		.insert()
 		.then((doc) => router.push(`/workbook/${doc.name}`))
 		.finally(() => (creatingWorkbook.value = false))
 }
 
-function openNewFolder() {
-	confirmDialog({
-		title: __('New Folder'),
-		primaryActionLabel: __('Create'),
-		fields: [
-			{
-				fieldname: 'title',
-				label: __('Title'),
-				placeholder: __('Folder name'),
-				required: true,
-			},
-		],
-		onSuccess: ({ values }: any) => {
-			if (!values.title) return
-			return folderStore.createFolder(values.title, currentFolder.value).then(refresh)
-		},
-	})
-}
-
+// ---- folder actions ----
+const { openNewFolder, renameFolder, deleteFolder } = useFolderActions(
+	folderStore,
+	refresh,
+	currentFolder,
+)
 const newButtonOptions = computed(() => [
 	{ label: __('New Folder'), icon: FolderPlus, onClick: openNewFolder },
 ])
-
-// ---- folder actions ----
-function renameFolder(folder: { name: string; title: string }) {
-	confirmDialog({
-		title: __('Rename Folder'),
-		primaryActionLabel: __('Rename'),
-		fields: [
-			{
-				fieldname: 'title',
-				label: __('Title'),
-				placeholder: folder.title,
-				required: true,
-			},
-		],
-		onSuccess: ({ values }: any) => {
-			if (!values.title) return
-			return folderStore.renameFolder(folder.name, values.title).then(refresh)
-		},
-	})
-}
-
-function deleteFolder(folder: { name: string; title: string }) {
-	confirmDialog({
-		title: __('Delete Folder'),
-		message: __('Delete "{0}"? The folder must be empty first.', folder.title),
-		theme: 'red',
-		primaryActionLabel: __('Delete'),
-		onSuccess: () => folderStore.deleteFolder(folder.name).then(refresh),
-	})
-}
 
 async function moveWorkbook(workbook: string, folder: string | null) {
 	await folderStore.moveWorkbookToFolder(workbook, folder)
 	refresh()
 }
 
-// ---- bulk move (ListView selection) ----
-// `selections` is a Set of row keys like "workbook:5" / "folder:3"
-function selectedWorkbookNames(selections: Set<string>) {
-	return [...selections]
-		.filter((key) => key.startsWith('workbook:'))
-		.map((key) => key.slice('workbook:'.length))
-}
-
+// ---- bulk move (ListView selection); keys look like "workbook:5" / "folder:3" ----
 function bulkMoveOptions(selections: Set<string>, unselectAll: () => void) {
-	return buildFolderMoveOptions(folderStore.folders, currentFolder.value, async (folder) => {
-		const names = selectedWorkbookNames(selections)
+	return buildFolderMoveOptions(folders.value, currentFolder.value, async (folder) => {
+		const names = [...selections]
+			.filter((key) => key.startsWith('workbook:'))
+			.map((key) => key.slice('workbook:'.length))
 		if (!names.length) return
 		await folderStore.moveWorkbooksToFolder(names, folder)
 		unselectAll()
@@ -164,131 +82,14 @@ function bulkMoveOptions(selections: Set<string>, unselectAll: () => void) {
 	})
 }
 
-// ---- list columns (rows carry a __type discriminator: folder | workbook) ----
-const columns = [
-	{
-		label: __('Title'),
-		key: 'title',
-		width: 4,
-		prefix: (props: any) => {
-			if (props.row.__type === 'folder') {
-				return <Folder class="h-4 w-4 text-gray-600" stroke-width="1.5" />
-			}
-		},
-	},
-	{
-		label: __('Access'),
-		key: 'shared_with',
-		width: 2,
-		getLabel: (props: any) => {
-			const row = props.row
-			if (row.__type === 'folder') return ''
-			if (row.shared_with_organization) return __('Everyone')
-			if (!row.shared_with?.length) return __('Private')
-			return row.shared_with.length > 1
-				? `${row.shared_with.length} people`
-				: userStore.getName(row.shared_with[0])
-		},
-		prefix: (props: any) => {
-			const row = props.row as WorkbookListItem & { __type: string }
-			if (row.__type === 'folder') return
-			if (row.shared_with_organization) {
-				return <Building2 class="h-3.5 w-3.5 text-blue-500" />
-			}
-			if (!row.shared_with?.length) {
-				return <Lock class="h-3.5 w-3.5 text-orange-500" />
-			}
-			return <Shield class="h-3.5 w-3.5 text-green-500" />
-		},
-	},
-	{
-		label: __('Views'),
-		key: 'views',
-		width: 1.5,
-		getLabel: () => {},
-		prefix: (props: any) => {
-			const row = props.row
-			if (row.__type === 'folder') return
-			return (
-				<div class="flex gap-1">
-					<Eye class="h-3.5 w-3.5 text-gray-600" stroke-width="1.5" />
-					<span class="font-mono text-sm text-gray-700">{row.views}</span>
-				</div>
-			)
-		},
-	},
-	{
-		label: __('Owner'),
-		key: 'owner',
-		width: 2,
-		getLabel: (props: any) => {
-			const row = props.row
-			if (row.__type === 'folder') return ''
-			const user = userStore.getUser(row.owner)
-			return user?.full_name || row.owner
-		},
-		prefix: (props: any) => {
-			const row = props.row
-			if (row.__type === 'folder') return
-			const user = userStore.getUser(row.owner)
-			return <Avatar size="md" label={row.owner} image={user?.user_image} />
-		},
-	},
-	{
-		label: __('Modified'),
-		key: 'modified_from_now',
-		width: 2,
-		getLabel: (props: any) =>
-			props.row.__type === 'folder' ? '' : props.row.modified_from_now,
-	},
-	{
-		label: '',
-		key: 'actions',
-		width: 0.5,
-		getLabel: () => {},
-		prefix: (props: any) => {
-			const row = props.row
-			let options: any[] = []
-			if (row.__type === 'folder') {
-				if (!isAdmin.value) return
-				options = [
-					{ label: __('Rename'), icon: 'edit-2', onClick: () => renameFolder(row) },
-					{
-						label: __('Delete'),
-						icon: 'trash-2',
-						theme: 'red',
-						onClick: () => deleteFolder(row),
-					},
-				]
-			} else {
-				options = [
-					{
-						group: __('Move to folder'),
-						items: buildFolderMoveOptions(
-							folderStore.folders,
-							row.folder ?? null,
-							(folder) => moveWorkbook(row.name, folder),
-						),
-					},
-				]
-			}
-			return (
-				<Dropdown options={options} placement="right">
-					{{
-						default: () => (
-							<button
-								class="flex h-7 w-7 items-center justify-center rounded hover:bg-gray-100"
-								onClick={(e: Event) => e.stopPropagation()}
-							>
-								<MoreHorizontal class="h-4 w-4 text-gray-600" />
-							</button>
-						),
-					}}
-				</Dropdown>
-			)
-		},
-	},
-]
+const columns = getWorkbookColumns({
+	userStore,
+	isAdmin,
+	folders,
+	onRenameFolder: renameFolder,
+	onDeleteFolder: deleteFolder,
+	onMoveWorkbook: moveWorkbook,
+})
 
 function onRowClick(row: any) {
 	if (row.__type === 'folder') {
@@ -298,19 +99,14 @@ function onRowClick(row: any) {
 	}
 }
 
-const rows = computed(() => {
-	const folders = subfolders.value.map((f) => ({
-		...f,
-		__type: 'folder',
-		_key: `folder:${f.name}`,
-	}))
-	const wbs = workbookStore.workbooks.map((w: WorkbookListItem) => ({
+const rows = computed(() => [
+	...subfolders.value.map((f) => ({ ...f, __type: 'folder', _key: `folder:${f.name}` })),
+	...workbookStore.workbooks.map((w: WorkbookListItem) => ({
 		...w,
 		__type: 'workbook',
 		_key: `workbook:${w.name}`,
-	}))
-	return [...folders, ...wbs]
-})
+	})),
+])
 
 const listOptions = computed(() => ({
 	columns,

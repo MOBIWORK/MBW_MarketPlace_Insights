@@ -1,24 +1,25 @@
 <script setup lang="tsx">
 import { Breadcrumbs } from 'frappe-ui'
 import { SearchIcon } from 'lucide-vue-next'
-import { computed, ref, watchEffect } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, toRef, watchEffect } from 'vue'
+import { useRouter } from 'vue-router'
 import FolderCard from '../components/FolderCard.vue'
 import { wheneverChanges } from '../helpers'
 import { __ } from '../translation'
-import useWorkbookFolders, { childrenOf, folderBreadcrumb } from '../workbook/workbookFolders'
+import { useFolderNavigation } from '../workbook/useFolderNavigation'
+import useWorkbookFolders from '../workbook/workbookFolders'
 import DashboardCard from './DashboardCard.vue'
 import useDashboardStore, { DashboardListItem } from './dashboards'
 
 const store = useDashboardStore()
 const folderStore = useWorkbookFolders()
 const router = useRouter()
-const route = useRoute()
 
+const { currentFolder, searchQuery, drillInto, subfolders, breadcrumbs } = useFolderNavigation(
+	toRef(folderStore, 'folders'),
+	__('Dashboards'),
+)
 const filter = ref<'all' | 'favorites'>('all')
-const searchQuery = ref('')
-// folder navigation is driven by the URL so the browser back button drills up a level
-const currentFolder = computed(() => (route.query.folder as string) || null)
 
 // dashboards of the current folder come from the server; subfolders + breadcrumb
 // are derived on the client from the shared workbook folder tree
@@ -26,24 +27,8 @@ async function refresh() {
 	store.fetchDashboards(currentFolder.value, searchQuery.value, filter.value === 'favorites')
 }
 
-wheneverChanges([filter, currentFolder], refresh, { immediate: true })
+wheneverChanges(() => [filter.value, currentFolder.value], refresh, { immediate: true })
 wheneverChanges(searchQuery, refresh, { debounce: 300 })
-
-function drillInto(folder: string | null) {
-	searchQuery.value = ''
-	router.push({ query: folder ? { folder } : {} })
-}
-
-const subfolders = computed(() => childrenOf(folderStore.folders, currentFolder.value))
-
-const breadcrumbs = computed(() => {
-	const root = { label: __('Dashboards'), onClick: () => drillInto(null) }
-	const trail = folderBreadcrumb(folderStore.folders, currentFolder.value).map((b) => ({
-		label: b.title,
-		onClick: () => drillInto(b.name),
-	}))
-	return [root, ...trail]
-})
 
 const dropdownOptions = (dashboard: DashboardListItem) => [
 	{
