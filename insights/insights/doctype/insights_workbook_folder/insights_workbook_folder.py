@@ -19,6 +19,7 @@ class InsightsWorkbookFolder(Document):
     if TYPE_CHECKING:
         from frappe.types import DF
 
+        name: DF.Int | None
         parent_folder: DF.Link | None
         title: DF.Data
     # end: auto-generated types

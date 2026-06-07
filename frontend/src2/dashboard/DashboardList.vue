@@ -27,7 +27,16 @@ async function refresh() {
 	store.fetchDashboards(currentFolder.value, searchQuery.value, filter.value === 'favorites')
 }
 
-wheneverChanges(() => [filter.value, currentFolder.value], refresh, { immediate: true })
+// reset on folder/filter change so a slow fetch can't keep showing the previous
+// folder's dashboards; search keeps previous data (no flicker)
+wheneverChanges(
+	() => [filter.value, currentFolder.value],
+	() => {
+		store.dashboards = []
+		refresh()
+	},
+	{ immediate: true },
+)
 wheneverChanges(searchQuery, refresh, { debounce: 300 })
 
 const dropdownOptions = (dashboard: DashboardListItem) => [

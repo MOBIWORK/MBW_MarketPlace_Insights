@@ -1,7 +1,7 @@
 {
  "actions": [],
  "autoname": "autoincrement",
- "creation": "2026-06-06 00:00:00.000000",
+ "creation": "2026-06-06 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -28,7 +28,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-06 00:00:00.000000",
+ "modified": "2026-06-07 17:37:48.485809",
  "modified_by": "Administrator",
  "module": "Insights",
  "name": "Insights Workbook Folder",

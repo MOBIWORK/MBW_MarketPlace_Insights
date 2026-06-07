@@ -41,7 +41,16 @@ const scope = ref<'all' | 'owned' | 'shared'>('all')
 async function refresh() {
 	workbookStore.getWorkbooks(searchQuery.value, 0, scope.value, currentFolder.value || 'root')
 }
-wheneverChanges(() => [scope.value, currentFolder.value], refresh, { immediate: true })
+// reset the list when the folder/scope changes so a slow fetch can't keep
+// showing the previous folder's workbooks; search keeps previous data (no flicker)
+wheneverChanges(
+	() => [scope.value, currentFolder.value],
+	() => {
+		workbookStore.workbooks = []
+		refresh()
+	},
+	{ immediate: true },
+)
 wheneverChanges(searchQuery, refresh, { debounce: 300 })
 
 // ---- create workbook ----

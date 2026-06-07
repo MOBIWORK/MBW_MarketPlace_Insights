@@ -17,13 +17,13 @@ async function getWorkbooks(
 	folder?: string | null,
 ) {
 	loading.value = true
-	workbooks.value = await call('insights.api.workbooks.get_workbooks', {
+	const result = await call('insights.api.workbooks.get_workbooks', {
 		search_term,
 		limit,
 		scope: scope === 'all' ? null : scope,
 		folder: folder ?? null,
 	})
-	workbooks.value = workbooks.value.map((workbook: any) => ({
+	workbooks.value = result.map((workbook: any) => ({
 		...workbook,
 		created_from_now: useTimeAgo(workbook.creation),
 		modified_from_now: useTimeAgo(workbook.modified),
