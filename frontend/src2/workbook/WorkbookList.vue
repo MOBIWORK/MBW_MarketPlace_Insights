@@ -1,5 +1,5 @@
 <script setup lang="tsx">
-import { useMagicKeys, whenever } from '@vueuse/core'
+import { useMagicKeys, useStorage, whenever } from '@vueuse/core'
 import {
 	Breadcrumbs,
 	Dropdown,
@@ -8,6 +8,7 @@ import {
 	ListRows,
 	ListSelectBanner,
 	ListView,
+	TabButtons,
 } from 'frappe-ui'
 import { ChevronDown, Folder, FolderPlus, PlusIcon, SearchIcon } from 'lucide-vue-next'
 import { computed, ref, toRef, watchEffect } from 'vue'
@@ -36,7 +37,16 @@ const { currentFolder, searchQuery, drillInto, subfolders, breadcrumbs } = useFo
 	__('Workbooks'),
 )
 
-const scope = ref<'all' | 'owned' | 'shared'>('all')
+type WorkbookScope = 'all' | 'owned' | 'shared'
+
+const scopeTabs: { label: string; value: WorkbookScope }[] = [
+	{ label: __('All'), value: 'all' },
+	{ label: __('Created'), value: 'owned' },
+	{ label: __('Shared'), value: 'shared' },
+]
+
+// persist the chosen scope locally so it survives reloads
+const scope = useStorage<WorkbookScope>('insights:workbook-scope', 'all')
 
 async function refresh() {
 	workbookStore.getWorkbooks(searchQuery.value, 100, scope.value, currentFolder.value || 'root')
@@ -187,9 +197,10 @@ watchEffect(() => {
 	</header>
 
 	<div class="mb-4 flex h-full flex-col gap-3 overflow-auto px-5 py-3">
-		<div class="flex gap-2 overflow-visible py-1">
+		<div class="flex items-center justify-between gap-2 overflow-visible py-1">
 			<FormControl
-				:placeholder="__('Search by Title')"
+				class="w-64"
+				:placeholder="__('Search by title')"
 				v-model="searchQuery"
 				:debounce="300"
 				autocomplete="off"
@@ -198,15 +209,7 @@ watchEffect(() => {
 					<SearchIcon class="h-4 w-4 text-gray-500" />
 				</template>
 			</FormControl>
-			<FormControl
-				type="select"
-				v-model="scope"
-				:options="[
-					{ label: __('All'), value: 'all' },
-					{ label: __('Created by me'), value: 'owned' },
-					{ label: __('Shared with me'), value: 'shared' },
-				]"
-			/>
+			<TabButtons :buttons="scopeTabs" v-model="scope" />
 		</div>
 		<ListView class="h-full" v-bind="listOptions">
 			<ListHeader />
