@@ -2,7 +2,7 @@
 import { useStorage } from '@vueuse/core'
 import { Breadcrumbs, TabButtons } from 'frappe-ui'
 import { SearchIcon } from 'lucide-vue-next'
-import { computed, toRef, watchEffect } from 'vue'
+import { computed, ref, toRef, watchEffect } from 'vue'
 import { useRouter } from 'vue-router'
 import FolderCard from '../components/FolderCard.vue'
 import { showErrorToast, wheneverChanges } from '../helpers'
@@ -36,6 +36,11 @@ const filter = useStorage<DashboardFilter>('insights:dashboard-filter', 'all')
 // folders only make sense in the "all" view; the other lenses span folders
 const showFolders = computed(() => filter.value === 'all')
 
+// "Load more" grows the page size and refetches (recents is capped server-side)
+const PAGE_SIZE = 20
+const limit = ref(PAGE_SIZE)
+const hasMore = computed(() => filter.value !== 'recents' && store.dashboards.length >= limit.value)
+
 // dashboards come from the server; subfolders + breadcrumb are derived on the
 // client from the shared workbook folder tree
 async function refresh() {
@@ -50,7 +55,19 @@ async function refresh() {
 		favorites: filter.value === 'favorites',
 		scope:
 			filter.value === 'created' ? 'owned' : filter.value === 'shared' ? 'shared' : undefined,
+		limit: limit.value,
 	})
+}
+
+// reset pagination for a new query (filter/folder/search change)
+function reload() {
+	limit.value = PAGE_SIZE
+	refresh()
+}
+
+function loadMore() {
+	limit.value += PAGE_SIZE
+	refresh()
 }
 
 const emptyState = computed(() => {
@@ -89,11 +106,11 @@ wheneverChanges(
 	() => [filter.value, currentFolder.value],
 	() => {
 		store.dashboards = []
-		refresh()
+		reload()
 	},
 	{ immediate: true },
 )
-wheneverChanges(searchQuery, refresh, { debounce: 300 })
+wheneverChanges(searchQuery, reload, { debounce: 300 })
 
 const dropdownOptions = (dashboard: DashboardListItem) => [
 	{
@@ -174,6 +191,11 @@ watchEffect(() => {
 					@toggle-favorite="toggleFavorite(dashboard)"
 					@update-preview="store.updatePreviewImage(dashboard.name)"
 				/>
+			</div>
+
+			<!-- load more -->
+			<div v-if="hasMore" class="flex pt-8">
+				<Button :label="__('Load more')" :loading="store.loading" @click="loadMore" />
 			</div>
 
 			<!-- empty -->

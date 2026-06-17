@@ -118,7 +118,7 @@ def get_dashboards(
         filters=filters,
         fields=DASHBOARD_LIST_FIELDS,
         order_by="creation desc",
-        limit=0 if (get_favorites or folder is not None) else limit,
+        limit=limit,
     )
 
     _enrich_dashboards(dashboards)
@@ -175,23 +175,22 @@ DASHBOARD_LIST_FIELDS = [
     "creation",
     "modified",
     "preview_image",
-    "items",
     "_liked_by",
 ]
 
 
 def _enrich_dashboards(dashboards):
-    # batch the view counts into one grouped query instead of one COUNT per
-    # dashboard (avoids an N+1 over the whole list)
-    view_counts = _dashboard_view_counts([dashboard.name for dashboard in dashboards])
+    # batch counts into one grouped query each instead of per-dashboard queries
+    # (avoids N+1s over the whole list)
+    names = [dashboard.name for dashboard in dashboards]
+    view_counts = _dashboard_view_counts(names)
+    chart_counts = _dashboard_chart_counts(names)
     user = frappe.session.user
     for dashboard in dashboards:
-        items = frappe.parse_json(dashboard["items"])
-        dashboard["charts"] = sum(1 for item in items if item["type"] == "chart")
+        dashboard["charts"] = chart_counts.get(str(dashboard.name), 0)
         dashboard["views"] = view_counts.get(str(dashboard.name), 0)
         if dashboard._liked_by:
             dashboard["is_favourite"] = user in frappe.as_json(dashboard._liked_by)
-        del dashboard["items"]
 
 
 def _dashboard_view_counts(names: list[str]) -> dict[str, int]:
@@ -210,6 +209,25 @@ def _dashboard_view_counts(names: list[str]) -> dict[str, int]:
         .run(as_dict=True)
     )
     return {str(row.reference_name): row.views for row in rows}
+
+
+def _dashboard_chart_counts(names: list[str]) -> dict[str, int]:
+    # one chart == one row in the `linked_charts` child table (rebuilt from
+    # `items` on every save), so count rows per parent instead of parsing items
+    if not names:
+        return {}
+    linked_chart = frappe.qb.DocType("Insights Dashboard Chart v3")
+    rows = (
+        frappe.qb.from_(linked_chart)
+        .select(linked_chart.parent, Count(linked_chart.name).as_("charts"))
+        .where(
+            (linked_chart.parenttype == "Insights Dashboard v3")
+            & linked_chart.parent.isin([str(name) for name in names])
+        )
+        .groupby(linked_chart.parent)
+        .run(as_dict=True)
+    )
+    return {str(row.parent): row.charts for row in rows}
 
 
 @insights_whitelist()

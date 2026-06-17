@@ -35,6 +35,7 @@ type FetchDashboardsOptions = {
 	search_term?: string
 	favorites?: boolean
 	scope?: DashboardScope
+	limit?: number
 }
 
 // folder filters to a workbook folder; favorites/scope are personal lenses.
@@ -44,6 +45,7 @@ async function fetchDashboards({
 	search_term,
 	favorites = false,
 	scope,
+	limit = 0,
 }: FetchDashboardsOptions = {}) {
 	loading.value = true
 	const result = await call('insights.api.dashboards.get_dashboards', {
@@ -51,7 +53,7 @@ async function fetchDashboards({
 		search_term,
 		get_favorites: favorites,
 		scope,
-		limit: 0,
+		limit,
 	})
 	dashboards.value = result.map(mapTimeAgo)
 	loading.value = false
