@@ -198,9 +198,13 @@ watchEffect(() => {
 				<Button :label="__('Load more')" :loading="store.loading" @click="loadMore" />
 			</div>
 
-			<!-- empty -->
+			<!-- empty (hidden while a fetch is in flight so it doesn't flash on tab switch) -->
 			<div
-				v-if="(!showFolders || !subfolders.length) && !store.dashboards.length"
+				v-if="
+					(!showFolders || !subfolders.length) &&
+					!store.dashboards.length &&
+					!store.loading
+				"
 				class="flex h-full w-full flex-col items-center justify-center text-base"
 			>
 				<div class="text-xl font-medium">{{ emptyState.title }}</div>
