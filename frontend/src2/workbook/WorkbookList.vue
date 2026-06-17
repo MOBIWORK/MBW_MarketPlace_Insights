@@ -239,7 +239,8 @@ watchEffect(() => {
 			<ListView v-bind="listOptions">
 				<ListHeader />
 				<ListRows v-if="rows.length" />
-				<ListEmptyState v-else />
+				<!-- skip the empty state while a fetch is in flight so it doesn't flash on tab switch -->
+				<ListEmptyState v-else-if="!workbookStore.loading" />
 				<ListSelectBanner>
 					<template #actions="{ selections, unselectAll }">
 						<Dropdown
